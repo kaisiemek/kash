@@ -1,3 +1,5 @@
+mod builtins;
+mod eval;
 mod repl;
 
 use std::io::BufReader;

@@ -1,5 +1,7 @@
 use std::io::{BufRead, Write};
 
+use crate::eval::eval;
+
 pub struct Repl<R: BufRead, W: Write> {
     reader: R,
     writer: W,
@@ -20,10 +22,16 @@ impl<R: BufRead, W: Write> Repl<R, W> {
             if bytesread == 0 {
                 break;
             }
-            writeln!(self.writer, "{}", input.trim())?;
+
+            let argv = Self::parse_argv(&input);
+            eval(&mut self.writer, &argv)?;
             input.clear();
         }
 
         Ok(())
+    }
+
+    fn parse_argv(line: &str) -> Vec<&str> {
+        line.trim().split_ascii_whitespace().collect()
     }
 }
