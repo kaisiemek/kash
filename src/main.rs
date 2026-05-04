@@ -1,3 +1,11 @@
+mod repl;
+
+use std::io::BufReader;
+
+use crate::repl::Repl;
+
 fn main() {
-    println!("Hello, world!");
+    Repl::new(BufReader::new(std::io::stdin()), std::io::stdout())
+        .run()
+        .unwrap();
 }
