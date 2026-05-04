@@ -25,3 +25,28 @@ fn echo(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()> {
 fn exit(_: &mut dyn Write, _: &[&str]) -> std::io::Result<()> {
     std::process::exit(0);
 }
+
+#[cfg(test)]
+mod test {
+    use crate::eval::eval;
+
+    #[test]
+    fn test_echo() {
+        let inputs = vec![
+            "echo",
+            "echo abc",
+            "echo abc def",
+            "     echo abc",
+            "echo abc  ",
+            " echo  abc  def  ",
+        ];
+        let expected_results = vec!["\n", "abc\n", "abc def\n", "abc\n", "abc\n", "abc def\n"];
+
+        for (input, expected) in inputs.into_iter().zip(expected_results) {
+            let mut output = Vec::new();
+            eval(&mut output, input).unwrap();
+
+            assert_eq!(String::from_utf8_lossy(&output), expected);
+        }
+    }
+}
