@@ -7,6 +7,7 @@ type BuiltinFn = fn(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()
 static BUILTINS: phf::Map<&'static str, BuiltinFn> = phf_map! {
     "echo" => echo,
     "exit" => exit,
+    "type" => typebuiltin,
 };
 
 pub fn is_builtin(command: &str) -> bool {
@@ -26,6 +27,17 @@ fn exit(_: &mut dyn Write, _: &[&str]) -> std::io::Result<()> {
     std::process::exit(0);
 }
 
+fn typebuiltin(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()> {
+    for arg in argv {
+        if is_builtin(arg) {
+            writeln!(writer, "{} is a shell builtin", arg)?;
+        } else {
+            writeln!(writer, "{} not found", arg)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use crate::eval::eval;
@@ -41,6 +53,31 @@ mod test {
             " echo  abc  def  ",
         ];
         let expected_results = vec!["\n", "abc\n", "abc def\n", "abc\n", "abc\n", "abc def\n"];
+
+        for (input, expected) in inputs.into_iter().zip(expected_results) {
+            let mut output = Vec::new();
+            eval(&mut output, input).unwrap();
+
+            assert_eq!(String::from_utf8_lossy(&output), expected);
+        }
+    }
+
+    #[test]
+    fn test_type() {
+        let inputs = vec![
+            "type echo",
+            "type echo type exit",
+            "type echo notexist   ",
+            "type type type",
+            "  type     notexist  ",
+        ];
+        let expected_results = vec![
+            "echo is a shell builtin\n",
+            "echo is a shell builtin\ntype is a shell builtin\nexit is a shell builtin\n",
+            "echo is a shell builtin\nnotexist not found\n",
+            "type is a shell builtin\ntype is a shell builtin\n",
+            "notexist not found\n",
+        ];
 
         for (input, expected) in inputs.into_iter().zip(expected_results) {
             let mut output = Vec::new();
