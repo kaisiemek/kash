@@ -19,3 +19,32 @@ pub fn eval<W: Write>(writer: &mut W, input: &str) -> std::io::Result<()> {
 fn parse_argv(line: &str) -> Vec<&str> {
     line.trim().split_ascii_whitespace().collect()
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_argv() {
+        let inputs = vec![
+            "echo",
+            "echo abc",
+            "echo abc def",
+            "     echo abc",
+            "echo abc  ",
+            " echo  abc  def  ",
+        ];
+        let expected_results = vec![
+            ["echo"].as_slice(),
+            ["echo", "abc"].as_slice(),
+            ["echo", "abc", "def"].as_slice(),
+            ["echo", "abc"].as_slice(),
+            ["echo", "abc"].as_slice(),
+            ["echo", "abc", "def"].as_slice(),
+        ];
+
+        for (input, expected) in inputs.into_iter().zip(expected_results) {
+            assert_eq!(&parse_argv(input), expected);
+        }
+    }
+}
