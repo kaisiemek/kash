@@ -23,15 +23,10 @@ impl<R: BufRead, W: Write> Repl<R, W> {
                 break;
             }
 
-            let argv = Self::parse_argv(&input);
-            eval(&mut self.writer, &argv)?;
+            eval(&mut self.writer, &input)?;
             input.clear();
         }
 
         Ok(())
-    }
-
-    fn parse_argv(line: &str) -> Vec<&str> {
-        line.trim().split_ascii_whitespace().collect()
     }
 }
