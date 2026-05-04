@@ -1,13 +1,12 @@
 mod builtins;
-mod eval;
-mod repl;
+mod shell;
 
 use std::io::BufReader;
 
-use crate::repl::Repl;
+use crate::shell::Shell;
 
 fn main() {
-    Repl::new(BufReader::new(std::io::stdin()), std::io::stdout())
-        .run()
+    Shell::new(BufReader::new(std::io::stdin()), &mut std::io::stdout())
+        .run_repl()
         .unwrap();
 }

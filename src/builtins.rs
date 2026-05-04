@@ -40,7 +40,9 @@ fn typebuiltin(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod test {
-    use crate::eval::eval;
+    use std::io::{BufReader, Cursor};
+
+    use crate::shell::Shell;
 
     #[test]
     fn test_echo() {
@@ -54,11 +56,12 @@ mod test {
         ];
         let expected_results = vec!["\n", "abc\n", "abc def\n", "abc\n", "abc\n", "abc def\n"];
 
+        let mut output = Vec::new();
         for (input, expected) in inputs.into_iter().zip(expected_results) {
-            let mut output = Vec::new();
-            eval(&mut output, input).unwrap();
-
+            let mut shell = Shell::new(BufReader::new(Cursor::new("")), &mut output);
+            shell.eval_line(input).unwrap();
             assert_eq!(String::from_utf8_lossy(&output), expected);
+            output.clear();
         }
     }
 
@@ -79,11 +82,12 @@ mod test {
             "notexist not found\n",
         ];
 
+        let mut output = Vec::new();
         for (input, expected) in inputs.into_iter().zip(expected_results) {
-            let mut output = Vec::new();
-            eval(&mut output, input).unwrap();
-
+            let mut shell = Shell::new(BufReader::new(Cursor::new("")), &mut output);
+            shell.eval_line(input).unwrap();
             assert_eq!(String::from_utf8_lossy(&output), expected);
+            output.clear();
         }
     }
 }
