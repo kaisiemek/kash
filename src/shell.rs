@@ -1,15 +1,18 @@
 use std::io::{BufRead, Write};
 
-use crate::builtins::{is_builtin, run_builtin};
-
 pub struct Shell<'a, R: BufRead, W: Write> {
-    reader: R,
-    writer: &'a mut W,
+    pub(crate) reader: R,
+    pub(crate) writer: &'a mut W,
+    pub(crate) builtins: Vec<&'static str>,
 }
 
 impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
     pub fn new(reader: R, writer: &'a mut W) -> Self {
-        Self { reader, writer }
+        Self {
+            reader,
+            writer,
+            builtins: Self::get_builtins(),
+        }
     }
 
     pub fn run_repl(&mut self) -> std::io::Result<()> {
@@ -36,8 +39,8 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
             return Ok(());
         };
 
-        if is_builtin(command) {
-            run_builtin(&mut self.writer, command, &argv[1..])
+        if self.builtins.contains(command) {
+            self.run_builtin(command, &argv[1..])
         } else {
             writeln!(self.writer, "{}: command not found", command)
         }

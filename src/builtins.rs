@@ -1,41 +1,39 @@
-use std::io::Write;
+use std::io::{BufRead, Write};
 
-use phf::phf_map;
+use crate::shell::Shell;
 
-type BuiltinFn = fn(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()>;
+impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
+    pub fn get_builtins() -> Vec<&'static str> {
+        vec!["echo", "exit", "type"]
+    }
 
-static BUILTINS: phf::Map<&'static str, BuiltinFn> = phf_map! {
-    "echo" => echo,
-    "exit" => exit,
-    "type" => typebuiltin,
-};
-
-pub fn is_builtin(command: &str) -> bool {
-    BUILTINS.contains_key(command)
-}
-pub fn run_builtin(writer: &mut dyn Write, command: &str, argv: &[&str]) -> std::io::Result<()> {
-    let Some(builtin) = BUILTINS.get(command) else {
-        return Ok(());
-    };
-    builtin(writer, argv)
-}
-
-fn echo(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()> {
-    writeln!(writer, "{}", argv.join(" "))
-}
-fn exit(_: &mut dyn Write, _: &[&str]) -> std::io::Result<()> {
-    std::process::exit(0);
-}
-
-fn typebuiltin(writer: &mut dyn Write, argv: &[&str]) -> std::io::Result<()> {
-    for arg in argv {
-        if is_builtin(arg) {
-            writeln!(writer, "{} is a shell builtin", arg)?;
-        } else {
-            writeln!(writer, "{} not found", arg)?;
+    pub fn run_builtin(&mut self, command: &str, argv: &[&str]) -> std::io::Result<()> {
+        match command {
+            "echo" => self.echo(argv),
+            "exit" => Self::exit(),
+            "type" => self.typebuiltin(argv),
+            _ => Ok(()),
         }
     }
-    Ok(())
+
+    fn echo(&mut self, argv: &[&str]) -> std::io::Result<()> {
+        writeln!(self.writer, "{}", argv.join(" "))
+    }
+
+    fn exit() -> std::io::Result<()> {
+        std::process::exit(0);
+    }
+
+    fn typebuiltin(&mut self, argv: &[&str]) -> std::io::Result<()> {
+        for arg in argv {
+            if self.builtins.contains(arg) {
+                writeln!(self.writer, "{} is a shell builtin", arg)?;
+            } else {
+                writeln!(self.writer, "{} not found", arg)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
