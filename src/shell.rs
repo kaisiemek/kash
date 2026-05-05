@@ -1,8 +1,13 @@
-use std::io::{BufRead, Write};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Write},
+    path::PathBuf,
+};
 
 pub struct Shell<'a, R: BufRead, W: Write> {
     pub(crate) reader: R,
     pub(crate) writer: &'a mut W,
+    pub(crate) externals: HashMap<String, PathBuf>,
     pub(crate) builtins: Vec<&'static str>,
 }
 
@@ -11,6 +16,7 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
         Self {
             reader,
             writer,
+            externals: Self::collect_externals(),
             builtins: Self::get_builtins(),
         }
     }
