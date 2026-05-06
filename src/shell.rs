@@ -47,6 +47,9 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
 
         if self.builtins.contains(command) {
             self.run_builtin(command, &argv[1..])
+        } else if let Some(command_path) = self.externals.get(*command) {
+            let path = command_path.clone();
+            self.run_external(&path, &argv[1..])
         } else {
             writeln!(self.writer, "{}: command not found", command)
         }

@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
     env,
-    io::{BufRead, Write},
+    io::{BufRead, Read, Write},
     os::unix::fs::PermissionsExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
 };
 
 use crate::shell::Shell;
@@ -28,6 +29,24 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
                 Some((bin_name, executable))
             })
             .collect()
+    }
+
+    pub fn run_external(&mut self, command: &Path, argv: &[&str]) -> std::io::Result<()> {
+        let mut child = Command::new(command)
+            .args(argv)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let Some(mut stdout) = child.stdout.take() else {
+            return Ok(());
+        };
+
+        let mut buf = String::new();
+        stdout.read_to_string(&mut buf)?;
+        writeln!(self.writer, "{}", buf)?;
+
+        Ok(())
     }
 
     // allow &PathBuf instead of &Path since we use it as a .filter() function for &PathBuf objects
