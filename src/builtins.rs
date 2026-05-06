@@ -2,7 +2,7 @@ use std::io::{BufRead, Write};
 
 use crate::shell::Shell;
 
-impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
+impl<R: BufRead, W: Write> Shell<R, W> {
     pub fn get_builtins() -> Vec<&'static str> {
         vec!["echo", "exit", "type"]
     }
@@ -42,9 +42,10 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
 mod test {
     use std::{
         fs::{self, File},
-        io::{BufReader, Cursor, Write},
+        io::{BufRead, BufReader, PipeReader, PipeWriter, Write},
         os::unix::fs::PermissionsExt,
         path::{Path, PathBuf},
+        thread::JoinHandle,
     };
 
     use crate::shell::Shell;
@@ -83,6 +84,51 @@ mod test {
         tmp_dir
     }
 
+    fn run_test_shell() -> (JoinHandle<()>, PipeReader, PipeWriter) {
+        let (stdin_reader, stdin_writer) = std::io::pipe().unwrap();
+        let (stdout_reader, stdout_writer) = std::io::pipe().unwrap();
+        let mut shell = Shell::new(BufReader::new(stdin_reader), stdout_writer);
+
+        let shell_thread = std::thread::spawn(move || {
+            shell
+                .run_repl()
+                .expect("an error occurred in the shell thread");
+        });
+
+        (shell_thread, stdout_reader, stdin_writer)
+    }
+
+    fn run_test_input(
+        input: &str,
+        expected: &str,
+        stdout: &mut BufReader<PipeReader>,
+        stdin: &mut PipeWriter,
+    ) {
+        stdin.write_all(input.as_bytes()).unwrap();
+        stdin.write(b"\n").unwrap();
+        stdin.flush().unwrap();
+        for expected_line in expected.lines() {
+            let mut output_line = String::new();
+            stdout.read_line(&mut output_line).unwrap();
+            output_line = output_line
+                .strip_prefix("$ ")
+                .unwrap_or(&output_line)
+                .trim()
+                .to_string();
+            assert_eq!(expected_line, output_line);
+        }
+    }
+
+    fn run_test_cases(inputs: Vec<&str>, expected_outputs: Vec<&str>) {
+        let (shell_thread, stdout, mut stdin) = run_test_shell();
+        let mut reader = BufReader::new(stdout);
+        for (input, expected) in inputs.into_iter().zip(expected_outputs) {
+            run_test_input(input, expected, &mut reader, &mut stdin);
+        }
+        drop(stdin);
+        shell_thread.join().unwrap();
+    }
+
     #[test]
     fn test_echo() {
         let inputs = vec![
@@ -93,15 +139,8 @@ mod test {
             "echo abc  ",
             " echo  abc  def  ",
         ];
-        let expected_results = vec!["\n", "abc\n", "abc def\n", "abc\n", "abc\n", "abc def\n"];
-
-        let mut output = Vec::new();
-        for (input, expected) in inputs.into_iter().zip(expected_results) {
-            let mut shell = Shell::new(BufReader::new(Cursor::new("")), &mut output);
-            shell.eval_line(input).unwrap();
-            assert_eq!(String::from_utf8_lossy(&output), expected);
-            output.clear();
-        }
+        let expected_results = vec!["\n", "abc", "abc def", "abc", "abc", "abc def"];
+        run_test_cases(inputs, expected_results);
     }
 
     #[test]
@@ -117,25 +156,18 @@ mod test {
         ];
 
         let expected_output = format!(
-            "rustc is {}usr/bin/rustc\ncat is {}bin/cat\necho is a shell builtin\nnotexist not found\n",
+            "rustc is {}usr/bin/rustc\ncat is {}bin/cat\necho is a shell builtin\nnotexist not found",
             tmp_dir.display(),
             tmp_dir.display()
         );
         let expected_results = vec![
-            "echo is a shell builtin\n",
-            "echo is a shell builtin\ntype is a shell builtin\nexit is a shell builtin\n",
-            "echo is a shell builtin\nnotexist not found\n",
-            "type is a shell builtin\ntype is a shell builtin\n",
-            "notexist not found\n",
+            "echo is a shell builtin",
+            "echo is a shell builtin\ntype is a shell builtin\nexit is a shell builtin",
+            "echo is a shell builtin\nnotexist not found",
+            "type is a shell builtin\ntype is a shell builtin",
+            "notexist not found",
             &expected_output,
         ];
-
-        let mut output = Vec::new();
-        for (input, expected) in inputs.into_iter().zip(expected_results) {
-            let mut shell = Shell::new(BufReader::new(Cursor::new("")), &mut output);
-            shell.eval_line(input).unwrap();
-            assert_eq!(String::from_utf8_lossy(&output), expected);
-            output.clear();
-        }
+        run_test_cases(inputs, expected_results);
     }
 }

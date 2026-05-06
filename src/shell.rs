@@ -4,15 +4,15 @@ use std::{
     path::PathBuf,
 };
 
-pub struct Shell<'a, R: BufRead, W: Write> {
+pub struct Shell<R: BufRead, W: Write> {
     pub(crate) reader: R,
-    pub(crate) writer: &'a mut W,
+    pub(crate) writer: W,
     pub(crate) externals: HashMap<String, PathBuf>,
     pub(crate) builtins: Vec<&'static str>,
 }
 
-impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
-    pub fn new(reader: R, writer: &'a mut W) -> Self {
+impl<R: BufRead, W: Write> Shell<R, W> {
+    pub fn new(reader: R, writer: W) -> Self {
         Self {
             reader,
             writer,
@@ -35,9 +35,9 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
             self.eval_line(&buf)?;
             buf.clear();
         }
-
         Ok(())
     }
+
     pub fn eval_line(&mut self, line: &str) -> std::io::Result<()> {
         let argv = parse_argv(line);
 
@@ -47,9 +47,8 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
 
         if self.builtins.contains(command) {
             self.run_builtin(command, &argv[1..])
-        } else if let Some(command_path) = self.externals.get(*command) {
-            let path = command_path.clone();
-            self.run_external(&path, &argv[1..])
+        } else if self.externals.contains_key(*command) {
+            self.run_external(command, &argv[1..])
         } else {
             writeln!(self.writer, "{}: command not found", command)
         }

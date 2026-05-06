@@ -3,13 +3,13 @@ use std::{
     env,
     io::{BufRead, Read, Write},
     os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::{PathBuf},
     process::{Command, Stdio},
 };
 
 use crate::shell::Shell;
 
-impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
+impl<'a, R: BufRead, W: Write> Shell<R, W> {
     pub fn collect_externals() -> HashMap<String, PathBuf> {
         let Some(env_paths) = std::env::var_os("PATH") else {
             return HashMap::new();
@@ -31,8 +31,12 @@ impl<'a, R: BufRead, W: Write> Shell<'a, R, W> {
             .collect()
     }
 
-    pub fn run_external(&mut self, command: &Path, argv: &[&str]) -> std::io::Result<()> {
-        let mut child = Command::new(command)
+    pub fn run_external(&mut self, command: &str, argv: &[&str]) -> std::io::Result<()> {
+        let Some(command_path) = self.externals.get(command) else {
+            return Ok(());
+        };
+
+        let mut child = Command::new(command_path)
             .args(argv)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
