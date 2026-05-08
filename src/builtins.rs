@@ -1,14 +1,20 @@
-use std::io::{BufRead, Write};
+use std::{
+    fs,
+    io::{BufRead, Write},
+};
+
+use anyhow::{Result, anyhow, bail};
 
 use crate::shell::Shell;
 
 impl<R: BufRead, W: Write> Shell<R, W> {
     pub fn get_builtins() -> Vec<&'static str> {
-        vec!["echo", "exit", "pwd", "type"]
+        vec!["cd", "echo", "exit", "pwd", "type"]
     }
 
-    pub fn run_builtin(&mut self, command: &str, argv: &[&str]) -> std::io::Result<()> {
+    pub fn run_builtin(&mut self, command: &str, argv: &[&str]) -> Result<()> {
         match command {
+            "cd" => self.cd(argv),
             "echo" => self.echo(argv),
             "exit" => Self::exit(),
             "pwd" => self.pwd(),
@@ -17,26 +23,49 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         }
     }
 
-    fn echo(&mut self, argv: &[&str]) -> std::io::Result<()> {
-        writeln!(self.writer, "{}", argv.join(" "))
+    fn cd(&mut self, argv: &[&str]) -> Result<()> {
+        // use the home directory ("~") as a default if no args are given
+        let path = argv.first().unwrap_or(&"~");
+        let path = path.replace(
+            "~",
+            std::env::home_dir()
+                .ok_or(anyhow!("couldn't expand home directory"))?
+                .to_str()
+                .ok_or(anyhow!("couldn't represent home dir path as a string"))?,
+        );
+
+        let abs_path =
+            fs::canonicalize(&path).map_err(|_| anyhow!("{}: No such file or directory", path))?;
+
+        if !abs_path.is_dir() {
+            bail!("{}: Not a directory", path);
+        }
+
+        std::env::set_current_dir(&abs_path).map_err(|err| anyhow!("{}: {}", path, err))
     }
 
-    fn exit() -> std::io::Result<()> {
+    fn echo(&mut self, argv: &[&str]) -> Result<()> {
+        writeln!(self.writer, "{}", argv.join(" "))?;
+        Ok(())
+    }
+
+    fn exit() -> Result<()> {
         std::process::exit(0);
     }
 
-    fn pwd(&mut self) -> std::io::Result<()> {
+    fn pwd(&mut self) -> Result<()> {
         match std::env::current_dir() {
             Ok(pwd) => {
-                writeln!(self.writer, "{}", pwd.display())
+                writeln!(self.writer, "{}", pwd.display())?;
             }
             Err(err) => {
-                writeln!(self.writer, "{}", err.to_string())
+                writeln!(self.writer, "{}", err)?;
             }
         }
+        Ok(())
     }
 
-    fn typebuiltin(&mut self, argv: &[&str]) -> std::io::Result<()> {
+    fn typebuiltin(&mut self, argv: &[&str]) -> Result<()> {
         for arg in argv {
             if self.builtins.contains(arg) {
                 writeln!(self.writer, "{} is a shell builtin", arg)?;

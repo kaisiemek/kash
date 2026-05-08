@@ -9,7 +9,7 @@ use std::{
 
 use crate::shell::Shell;
 
-impl<'a, R: BufRead, W: Write> Shell<R, W> {
+impl<R: BufRead, W: Write> Shell<R, W> {
     pub fn collect_externals() -> HashMap<String, PathBuf> {
         let Some(env_paths) = std::env::var_os("PATH") else {
             return HashMap::new();

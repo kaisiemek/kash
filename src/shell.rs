@@ -46,7 +46,11 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         };
 
         if self.builtins.contains(command) {
-            self.run_builtin(command, &argv[1..])
+            if let Err(err) = self.run_builtin(command, &argv[1..]) {
+                writeln!(self.writer, "{}: {}", command, err)
+            } else {
+                Ok(())
+            }
         } else if self.externals.contains_key(*command) {
             self.run_external(command, &argv[1..])
         } else {
