@@ -3,7 +3,7 @@ use std::{
     env,
     io::{BufRead, Read, Write},
     os::unix::fs::PermissionsExt,
-    path::{PathBuf},
+    path::PathBuf,
     process::{Command, Stdio},
 };
 
@@ -32,11 +32,11 @@ impl<'a, R: BufRead, W: Write> Shell<R, W> {
     }
 
     pub fn run_external(&mut self, command: &str, argv: &[&str]) -> std::io::Result<()> {
-        let Some(command_path) = self.externals.get(command) else {
+        let Some(_) = self.externals.get(command) else {
             return Ok(());
         };
 
-        let mut child = Command::new(command_path)
+        let mut child = Command::new(command)
             .args(argv)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -48,7 +48,7 @@ impl<'a, R: BufRead, W: Write> Shell<R, W> {
 
         let mut buf = String::new();
         stdout.read_to_string(&mut buf)?;
-        writeln!(self.writer, "{}", buf)?;
+        write!(self.writer, "{}", buf)?;
 
         Ok(())
     }
