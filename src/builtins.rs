@@ -4,13 +4,14 @@ use crate::shell::Shell;
 
 impl<R: BufRead, W: Write> Shell<R, W> {
     pub fn get_builtins() -> Vec<&'static str> {
-        vec!["echo", "exit", "type"]
+        vec!["echo", "exit", "pwd", "type"]
     }
 
     pub fn run_builtin(&mut self, command: &str, argv: &[&str]) -> std::io::Result<()> {
         match command {
             "echo" => self.echo(argv),
             "exit" => Self::exit(),
+            "pwd" => self.pwd(),
             "type" => self.typebuiltin(argv),
             _ => Ok(()),
         }
@@ -22,6 +23,17 @@ impl<R: BufRead, W: Write> Shell<R, W> {
 
     fn exit() -> std::io::Result<()> {
         std::process::exit(0);
+    }
+
+    fn pwd(&mut self) -> std::io::Result<()> {
+        match std::env::current_dir() {
+            Ok(pwd) => {
+                writeln!(self.writer, "{}", pwd.display())
+            }
+            Err(err) => {
+                writeln!(self.writer, "{}", err.to_string())
+            }
+        }
     }
 
     fn typebuiltin(&mut self, argv: &[&str]) -> std::io::Result<()> {
@@ -169,5 +181,20 @@ mod test {
             &expected_output,
         ];
         run_test_cases(inputs, expected_results);
+    }
+
+    #[test]
+    fn test_pwd() {
+        let tmp_dir = fs::canonicalize(make_test_env()).unwrap();
+        let bin_dir = fs::canonicalize(tmp_dir.join("bin")).unwrap();
+        let (shell_thread, stdout, mut stdin) = run_test_shell();
+        let mut reader = BufReader::new(stdout);
+
+        std::env::set_current_dir(&tmp_dir).unwrap();
+        run_test_input("pwd", tmp_dir.to_str().unwrap(), &mut reader, &mut stdin);
+        std::env::set_current_dir(&bin_dir).unwrap();
+        run_test_input("pwd", bin_dir.to_str().unwrap(), &mut reader, &mut stdin);
+        drop(stdin);
+        shell_thread.join().unwrap();
     }
 }
