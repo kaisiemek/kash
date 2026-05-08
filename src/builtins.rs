@@ -12,7 +12,7 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         vec!["cd", "echo", "exit", "pwd", "type"]
     }
 
-    pub fn run_builtin(&mut self, command: &str, argv: &[&str]) -> Result<()> {
+    pub fn run_builtin(&mut self, command: &str, argv: &[String]) -> Result<()> {
         match command {
             "cd" => self.cd(argv),
             "echo" => self.echo(argv),
@@ -23,9 +23,9 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         }
     }
 
-    fn cd(&mut self, argv: &[&str]) -> Result<()> {
+    fn cd(&mut self, argv: &[String]) -> Result<()> {
         // use the home directory ("~") as a default if no args are given
-        let path = argv.first().unwrap_or(&"~");
+        let path = argv.first().cloned().unwrap_or("~".to_string());
         let path = path.replace(
             "~",
             std::env::home_dir()
@@ -44,7 +44,7 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         std::env::set_current_dir(&abs_path).map_err(|err| anyhow!("{}: {}", path, err))
     }
 
-    fn echo(&mut self, argv: &[&str]) -> Result<()> {
+    fn echo(&mut self, argv: &[String]) -> Result<()> {
         writeln!(self.writer, "{}", argv.join(" "))?;
         Ok(())
     }
@@ -65,11 +65,11 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         Ok(())
     }
 
-    fn typebuiltin(&mut self, argv: &[&str]) -> Result<()> {
+    fn typebuiltin(&mut self, argv: &[String]) -> Result<()> {
         for arg in argv {
-            if self.builtins.contains(arg) {
+            if self.builtins.contains(&arg.as_str()) {
                 writeln!(self.writer, "{} is a shell builtin", arg)?;
-            } else if let Some(path) = self.externals.get(*arg) {
+            } else if let Some(path) = self.externals.get(arg) {
                 writeln!(self.writer, "{} is {}", arg, path.display())?;
             } else {
                 writeln!(self.writer, "{} not found", arg)?;
@@ -156,7 +156,7 @@ mod test {
                 .unwrap_or(&output_line)
                 .trim()
                 .to_string();
-            assert_eq!(expected_line, output_line);
+            assert_eq!(expected_line, output_line, "input: {}", input);
         }
     }
 

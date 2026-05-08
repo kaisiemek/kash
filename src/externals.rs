@@ -31,7 +31,7 @@ impl<R: BufRead, W: Write> Shell<R, W> {
             .collect()
     }
 
-    pub fn run_external(&mut self, command: &str, argv: &[&str]) -> std::io::Result<()> {
+    pub fn run_external(&mut self, command: &str, argv: &[String]) -> std::io::Result<()> {
         let Some(_) = self.externals.get(command) else {
             return Ok(());
         };

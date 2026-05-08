@@ -1,5 +1,6 @@
 mod builtins;
 mod externals;
+mod parser;
 mod shell;
 
 use std::io::BufReader;
