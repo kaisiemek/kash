@@ -1,5 +1,7 @@
 mod tokenizer;
 
+use std::{path::PathBuf, vec::IntoIter};
+
 use crate::parser::tokenizer::{Token, Tokenizer};
 
 #[derive(Debug)]
@@ -7,23 +9,59 @@ pub enum ParserError {
     UnterminatedSingleQuoteString,
     UnterminatedDoubleQuoteString,
     NeedNextLine,
+    UnexpectedEnd,
+    UnexpectedToken,
 }
 
-pub fn parse_argv(input: &str) -> Result<Vec<String>, ParserError> {
-    let mut argv = Vec::new();
-    let tokens = Tokenizer::new().tokenize(input)?;
-    for token in tokens {
-        match token {
-            Token::Word(word) => argv.push(word),
-            Token::StdoutRedirect => unimplemented!(),
+pub struct CommandParser {
+    tokenizer: Tokenizer,
+    tokens: IntoIter<Token>,
+}
+
+#[derive(Debug, Default)]
+pub struct Command {
+    pub argv: Vec<String>,
+    pub stdout_redirects: Vec<PathBuf>,
+}
+
+impl CommandParser {
+    pub fn new() -> Self {
+        Self {
+            tokenizer: Tokenizer::new(),
+            tokens: Vec::new().into_iter(),
         }
     }
-    Ok(argv)
+
+    pub fn parse(&mut self, input: &str) -> Result<Command, ParserError> {
+        self.tokens = self.tokenizer.tokenize(input)?.into_iter();
+        let mut command = Command::default();
+
+        while let Some(token) = self.tokens.next() {
+            match token {
+                Token::Word(word) => command.argv.push(word),
+                Token::StdoutRedirect => command
+                    .stdout_redirects
+                    .push(PathBuf::from(self.expect_word()?)),
+            }
+        }
+
+        Ok(command)
+    }
+
+    fn expect_word(&mut self) -> Result<String, ParserError> {
+        match self.tokens.next() {
+            None => Err(ParserError::UnexpectedEnd),
+            Some(Token::Word(word)) => Ok(word),
+            _ => Err(ParserError::UnexpectedToken),
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::parser::parse_argv;
+    use std::path::PathBuf;
+
+    use crate::parser::CommandParser;
 
     fn run_tests(inputs: Vec<&str>, expected_outputs: Vec<Vec<&str>>) {
         let expected_outputs: Vec<Vec<String>> = expected_outputs
@@ -32,14 +70,11 @@ mod test {
             .collect();
 
         for (input, expected_output) in inputs.iter().zip(expected_outputs) {
+            let mut parser = CommandParser::new();
             let mut input_line = input.to_string();
             input_line.push('\n');
-            assert_eq!(
-                parse_argv(&input_line).unwrap(),
-                expected_output,
-                "input: {}",
-                input
-            );
+            let cmd = parser.parse(&input_line).unwrap();
+            assert_eq!(cmd.argv, expected_output, "input: {}", input);
         }
     }
 
@@ -112,5 +147,31 @@ mod test {
         ];
 
         run_tests(inputs, expected_outputs);
+    }
+
+    #[test]
+    fn test_redirects() {
+        let inputs = vec![
+            "echo 'abc' > testfile",
+            "echo 'abc' > testfile1 > testfile2",
+            "echo 'abc' > subdir/testfile",
+        ];
+        let expected_outputs = vec![
+            vec!["testfile"],
+            vec!["testfile1", "testfile2"],
+            vec!["subdir/testfile"],
+        ];
+        let expected_outputs: Vec<Vec<PathBuf>> = expected_outputs
+            .iter()
+            .map(|strvec| strvec.iter().map(|s| PathBuf::from(s)).collect())
+            .collect();
+
+        for (input, expected_output) in inputs.iter().zip(expected_outputs) {
+            let mut parser = CommandParser::new();
+            let mut input_line = input.to_string();
+            input_line.push('\n');
+            let cmd = parser.parse(&input_line).unwrap();
+            assert_eq!(cmd.stdout_redirects, expected_output, "input: {}", input);
+        }
     }
 }

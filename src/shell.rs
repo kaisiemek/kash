@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::parser::{ParserError, parse_argv};
+use crate::parser::{CommandParser, ParserError};
 
 pub struct Shell<R: BufRead, W: Write> {
     pub(crate) reader: R,
@@ -12,6 +12,8 @@ pub struct Shell<R: BufRead, W: Write> {
     pub(crate) externals: HashMap<String, PathBuf>,
     pub(crate) builtins: Vec<&'static str>,
     prompt: &'static str,
+    parser: CommandParser,
+    buf: String,
 }
 
 impl<R: BufRead, W: Write> Shell<R, W> {
@@ -22,63 +24,71 @@ impl<R: BufRead, W: Write> Shell<R, W> {
             externals: Self::collect_externals(),
             builtins: Self::get_builtins(),
             prompt: "$",
+            parser: CommandParser::new(),
+            buf: String::new(),
         }
     }
 
     pub fn run_repl(&mut self) -> std::io::Result<()> {
-        let mut buf = String::new();
         loop {
             write!(self.writer, "{} ", self.prompt)?;
             self.writer.flush()?;
 
-            let bytesread = self.reader.read_line(&mut buf)?;
+            let bytesread = self.reader.read_line(&mut self.buf)?;
             if bytesread == 0 {
                 break;
             }
 
-            // only clear the buffer if the line has been evaluated successfully
-            if self.eval_line(&buf)? {
-                buf.clear();
-            }
+            self.eval_line()?;
         }
         Ok(())
     }
 
-    pub fn eval_line(&mut self, line: &str) -> std::io::Result<bool> {
-        let argv = match parse_argv(line) {
-            Ok(argv) => argv,
+    pub fn eval_line(&mut self) -> std::io::Result<()> {
+        let cmd = match self.parser.parse(&self.buf) {
+            Ok(cmd) => cmd,
             Err(err) => {
-                self.set_prompt(Some(err));
-                return Ok(false);
+                return self.handle_parser_err(err);
             }
         };
-        self.set_prompt(None);
+        // clear the linebuf only when the parsing was successful
+        // (or if the error can't be resolved by keeping parsing further lines)
+        self.buf.clear();
+        self.prompt = "$";
 
         // just return and wait for next command for empty argvs
-        let Some(command) = argv.first() else {
-            return Ok(true);
+        let Some(cmd_name) = cmd.argv.first() else {
+            return Ok(());
         };
 
-        if self.builtins.contains(&command.as_str()) {
+        if self.builtins.contains(&cmd_name.as_str()) {
             // TODO: move error handling in the run_builtin function
-            if let Err(err) = self.run_builtin(command, &argv[1..]) {
-                writeln!(self.writer, "{}: {}", command, err)?;
+            if let Err(err) = self.run_builtin(cmd_name, &cmd.argv[1..]) {
+                writeln!(self.writer, "{}: {}", cmd_name, err)?;
             }
-        } else if self.externals.contains_key(command) {
-            self.run_external(command, &argv[1..])?;
+        } else if self.externals.contains_key(cmd_name) {
+            self.run_external(cmd_name, &cmd.argv[1..])?;
         } else {
-            writeln!(self.writer, "{}: command not found", command)?;
+            writeln!(self.writer, "{}: command not found", cmd_name)?;
         }
 
-        Ok(true)
+        Ok(())
     }
 
-    fn set_prompt(&mut self, err: Option<ParserError>) {
-        self.prompt = match err {
-            Some(ParserError::NeedNextLine) => ">",
-            Some(ParserError::UnterminatedSingleQuoteString) => "quote>",
-            Some(ParserError::UnterminatedDoubleQuoteString) => "dquote>",
-            None => "$",
+    fn handle_parser_err(&mut self, err: ParserError) -> std::io::Result<()> {
+        match err {
+            ParserError::UnterminatedSingleQuoteString => self.prompt = "quote>",
+            ParserError::UnterminatedDoubleQuoteString => self.prompt = "dquote>",
+            ParserError::NeedNextLine => self.prompt = ">",
+            ParserError::UnexpectedEnd => {
+                writeln!(self.writer, "parse error: unexpected end")?;
+                self.buf.clear();
+            }
+            ParserError::UnexpectedToken => {
+                writeln!(self.writer, "parse error: unexpected token")?;
+                self.buf.clear();
+            }
         };
+        Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use std::{iter::Peekable, str::Chars};
+use std::collections::VecDeque;
 
 use crate::parser::ParserError;
 
@@ -8,24 +8,24 @@ pub enum Token {
     StdoutRedirect,
 }
 
-pub struct Tokenizer<'a> {
-    input: Peekable<Chars<'a>>,
+pub struct Tokenizer {
+    input: VecDeque<char>,
     tokens: Vec<Token>,
     buf: String,
 }
 
-impl<'a> Tokenizer<'a> {
+impl Tokenizer {
     pub fn new() -> Self {
         Self {
-            input: "".chars().peekable(),
+            input: VecDeque::new(),
             tokens: Vec::new(),
             buf: String::new(),
         }
     }
 
-    pub fn tokenize(&mut self, input: &'a str) -> Result<Vec<Token>, ParserError> {
+    pub fn tokenize(&mut self, input: &str) -> Result<Vec<Token>, ParserError> {
         self.tokens.clear();
-        self.input = input.chars().peekable();
+        self.input = input.chars().collect();
         self.collect_tokens()?;
         Ok(std::mem::take(&mut self.tokens))
     }
@@ -35,20 +35,20 @@ impl<'a> Tokenizer<'a> {
             self.skip_whitespace();
             self.buf.clear();
 
-            let Some(c) = self.input.peek().copied() else {
+            let Some(c) = self.input.front().copied() else {
                 break;
             };
 
             match c {
                 '>' => {
-                    self.input.next();
+                    self.input.pop_front();
                     self.tokens.push(Token::StdoutRedirect);
                 }
                 '1' => {
-                    self.input.next();
-                    if self.input.peek().is_some_and(|c| *c == '>') {
+                    self.input.pop_front();
+                    if self.input.front().is_some_and(|c| *c == '>') {
                         self.tokens.push(Token::StdoutRedirect);
-                        self.input.next();
+                        self.input.pop_front();
                     } else {
                         self.buf.push(c);
                         self.tokenize_word()?;
@@ -67,7 +67,7 @@ impl<'a> Tokenizer<'a> {
         loop {
             // if we reach the end of the input without a newline (e.g. by escaping the newline)
             // we need more input
-            let Some(c) = self.input.next() else {
+            let Some(c) = self.input.pop_front() else {
                 return Err(ParserError::NeedNextLine);
             };
             match c {
@@ -90,7 +90,7 @@ impl<'a> Tokenizer<'a> {
 
     fn tokenize_single_quoted(&mut self) -> Result<(), ParserError> {
         let mut terminated = false;
-        for c in self.input.by_ref() {
+        while let Some(c) = self.input.pop_front() {
             match c {
                 '\'' => {
                     terminated = true;
@@ -110,14 +110,14 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_double_quoted(&mut self) -> Result<(), ParserError> {
         let mut terminated = false;
 
-        while let Some(c) = self.input.next() {
+        while let Some(c) = self.input.pop_front() {
             match c {
                 '"' => {
                     terminated = true;
                     break;
                 }
                 '\\' => {
-                    let Some(cn) = self.input.peek() else {
+                    let Some(cn) = self.input.front() else {
                         self.buf.push('\\');
                         break;
                     };
@@ -140,13 +140,13 @@ impl<'a> Tokenizer<'a> {
 
     // helpers
     fn skip_whitespace(&mut self) {
-        while self.input.peek().is_some_and(|c| c.is_whitespace()) {
-            self.input.next();
+        while self.input.front().is_some_and(|c| c.is_whitespace()) {
+            self.input.pop_front();
         }
     }
 
     fn escape_next(&mut self) {
-        if let Some(c) = self.input.next() {
+        if let Some(c) = self.input.pop_front() {
             self.buf.push(c);
         }
     }
@@ -154,8 +154,8 @@ impl<'a> Tokenizer<'a> {
     fn handle_redirect_mid_word(&mut self, c: char) -> bool {
         match c {
             '>' => {}
-            '1' if self.input.peek().is_some_and(|c| *c == '>') => {
-                self.input.next();
+            '1' if self.input.front().is_some_and(|c| *c == '>') => {
+                self.input.pop_front();
             }
             c => {
                 self.buf.push(c);
