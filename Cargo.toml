@@ -6,4 +6,5 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0.102"
+itertools = "0.14.0"
 phf = { version = "0.13.1", features = ["macros"] }

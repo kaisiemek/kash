@@ -1,6 +1,6 @@
 mod tokenizer;
 
-use std::{iter::Peekable, str::Chars};
+use crate::parser::tokenizer::{Token, Tokenizer};
 
 #[derive(Debug)]
 pub enum ParserError {
@@ -9,19 +9,13 @@ pub enum ParserError {
     NeedNextLine,
 }
 
-type ShellInput<'a> = Peekable<Chars<'a>>;
-
 pub fn parse_argv(input: &str) -> Result<Vec<String>, ParserError> {
     let mut argv = Vec::new();
-    let mut chars = input.trim_start().chars().peekable();
-    while let Some(token) = tokenizer::get_next_token(&mut chars)? {
+    let tokens = Tokenizer::new().tokenize(input)?;
+    for token in tokens {
         match token {
-            tokenizer::Token::Word(string) => {
-                // some words are empty, ignore those (e.g. "", '')
-                if !string.is_empty() {
-                    argv.push(string);
-                }
-            }
+            Token::Word(word) => argv.push(word),
+            Token::StdoutRedirect => unimplemented!(),
         }
     }
     Ok(argv)
