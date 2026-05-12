@@ -1,4 +1,5 @@
 mod builtins;
+mod evaluator;
 mod externals;
 mod parser;
 mod shell;

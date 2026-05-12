@@ -19,9 +19,9 @@ pub struct CommandParser {
 }
 
 #[derive(Debug, Default)]
-pub struct Command {
+pub struct ShellCommand {
     pub argv: Vec<String>,
-    pub stdout_redirects: Vec<PathBuf>,
+    pub stdout_redirect: Option<PathBuf>,
 }
 
 impl CommandParser {
@@ -32,16 +32,16 @@ impl CommandParser {
         }
     }
 
-    pub fn parse(&mut self, input: &str) -> Result<Command, ParserError> {
+    pub fn parse(&mut self, input: &str) -> Result<ShellCommand, ParserError> {
         self.tokens = self.tokenizer.tokenize(input)?.into_iter();
-        let mut command = Command::default();
+        let mut command = ShellCommand::default();
 
         while let Some(token) = self.tokens.next() {
             match token {
                 Token::Word(word) => command.argv.push(word),
-                Token::StdoutRedirect => command
-                    .stdout_redirects
-                    .push(PathBuf::from(self.expect_word()?)),
+                Token::StdoutRedirect => {
+                    command.stdout_redirect = Some(PathBuf::from(self.expect_word()?))
+                }
             }
         }
 
@@ -156,22 +156,21 @@ mod test {
             "echo 'abc' > testfile1 > testfile2",
             "echo 'abc' > subdir/testfile",
         ];
-        let expected_outputs = vec![
-            vec!["testfile"],
-            vec!["testfile1", "testfile2"],
-            vec!["subdir/testfile"],
-        ];
-        let expected_outputs: Vec<Vec<PathBuf>> = expected_outputs
-            .iter()
-            .map(|strvec| strvec.iter().map(|s| PathBuf::from(s)).collect())
-            .collect();
+        let expected_outputs = vec!["testfile", "testfile2", "subdir/testfile"];
+        let expected_outputs: Vec<PathBuf> =
+            expected_outputs.iter().map(|s| PathBuf::from(s)).collect();
 
         for (input, expected_output) in inputs.iter().zip(expected_outputs) {
             let mut parser = CommandParser::new();
             let mut input_line = input.to_string();
             input_line.push('\n');
             let cmd = parser.parse(&input_line).unwrap();
-            assert_eq!(cmd.stdout_redirects, expected_output, "input: {}", input);
+            assert_eq!(
+                cmd.stdout_redirect.unwrap(),
+                expected_output,
+                "input: {}",
+                input
+            );
         }
     }
 }

@@ -4,7 +4,10 @@ use std::{
     path::PathBuf,
 };
 
-use crate::parser::{CommandParser, ParserError};
+use crate::{
+    builtins,
+    parser::{CommandParser, ParserError},
+};
 
 pub struct Shell<R: BufRead, W: Write> {
     pub(crate) reader: R,
@@ -22,7 +25,7 @@ impl<R: BufRead, W: Write> Shell<R, W> {
             reader,
             writer,
             externals: Self::collect_externals(),
-            builtins: Self::get_builtins(),
+            builtins: builtins::get_builtins(),
             prompt: "$",
             parser: CommandParser::new(),
             buf: String::new(),
@@ -56,22 +59,22 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         self.buf.clear();
         self.prompt = "$";
 
-        // just return and wait for next command for empty argvs
-        let Some(cmd_name) = cmd.argv.first() else {
-            return Ok(());
-        };
-
-        if self.builtins.contains(&cmd_name.as_str()) {
-            // TODO: move error handling in the run_builtin function
-            if let Err(err) = self.run_builtin(cmd_name, &cmd.argv[1..]) {
-                writeln!(self.writer, "{}: {}", cmd_name, err)?;
-            }
-        } else if self.externals.contains_key(cmd_name) {
-            self.run_external(cmd_name, &cmd.argv[1..])?;
-        } else {
-            writeln!(self.writer, "{}: command not found", cmd_name)?;
+        if let Err(err) = self.run_command(cmd) {
+            writeln!(self.writer, "{}", err)?;
         }
 
+        // if self.builtins.contains(&cmd_name.as_str()) {
+        //     // TODO: move error handling in the run_builtin function
+        //
+        //     if let Err(err) = self.run_builtin(cmd_name, &cmd.argv[1..]) {
+        //         writeln!(self.writer, "{}: {}", cmd_name, err)?;
+        //     }
+        // } else if self.externals.contains_key(cmd_name) {
+        //     self.run_external(cmd_name, &cmd.argv[1..])?;
+        // } else {
+        //     writeln!(self.writer, "{}: command not found", cmd_name)?;
+        // }
+        //
         Ok(())
     }
 

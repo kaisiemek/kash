@@ -1,82 +1,71 @@
-use std::{
-    fs,
-    io::{BufRead, Write},
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
-use crate::shell::Shell;
+pub fn get_builtins() -> Vec<&'static str> {
+    vec!["cd", "echo", "exit", "pwd", "type"]
+}
+pub fn cd(argv: &[String]) -> String {
+    match cd_inner(argv) {
+        Ok(()) => "".to_string(),
+        Err(err) => format!("{}\n", err),
+    }
+}
 
-impl<R: BufRead, W: Write> Shell<R, W> {
-    pub fn get_builtins() -> Vec<&'static str> {
-        vec!["cd", "echo", "exit", "pwd", "type"]
+// inner method to allow anyhow error handling
+fn cd_inner(argv: &[String]) -> Result<()> {
+    // use the home directory ("~") as a default if no args are given
+    let path = argv.first().cloned().unwrap_or("~".to_string());
+    // TODO: replace ~ in tokenizer/parser already
+    let path = path.replace(
+        "~",
+        std::env::home_dir()
+            .ok_or(anyhow!("couldn't expand home directory"))?
+            .to_str()
+            .ok_or(anyhow!("couldn't represent home dir path as a string"))?,
+    );
+
+    let abs_path =
+        fs::canonicalize(&path).map_err(|_| anyhow!("{}: No such file or directory", path))?;
+
+    if !abs_path.is_dir() {
+        bail!("{}: Not a directory", path);
     }
 
-    pub fn run_builtin(&mut self, command: &str, argv: &[String]) -> Result<()> {
-        match command {
-            "cd" => self.cd(argv),
-            "echo" => self.echo(argv),
-            "exit" => Self::exit(),
-            "pwd" => self.pwd(),
-            "type" => self.typebuiltin(argv),
-            _ => Ok(()),
+    std::env::set_current_dir(&abs_path).map_err(|err| anyhow!("{}: {}", path, err))
+}
+
+pub fn echo(argv: &[String]) -> String {
+    format!("{}\n", argv.join(" "))
+}
+
+pub fn exit() -> ! {
+    std::process::exit(0)
+}
+
+pub fn pwd() -> String {
+    match std::env::current_dir() {
+        Ok(pwd) => format!("{}\n", pwd.display()),
+        Err(err) => format!("{}\n", err),
+    }
+}
+
+pub fn typebuiltin(
+    argv: &[String],
+    builtins: &[&'static str],
+    externals: &HashMap<String, PathBuf>,
+) -> String {
+    let mut output = String::new();
+    for arg in argv {
+        if builtins.contains(&arg.as_str()) {
+            output += &format!("{} is a shell builtin\n", arg);
+        } else if let Some(path) = externals.get(arg) {
+            output += &format!("{} is {}\n", arg, path.display());
+        } else {
+            output += &format!("{} not found\n", arg);
         }
     }
-
-    fn cd(&mut self, argv: &[String]) -> Result<()> {
-        // use the home directory ("~") as a default if no args are given
-        let path = argv.first().cloned().unwrap_or("~".to_string());
-        let path = path.replace(
-            "~",
-            std::env::home_dir()
-                .ok_or(anyhow!("couldn't expand home directory"))?
-                .to_str()
-                .ok_or(anyhow!("couldn't represent home dir path as a string"))?,
-        );
-
-        let abs_path =
-            fs::canonicalize(&path).map_err(|_| anyhow!("{}: No such file or directory", path))?;
-
-        if !abs_path.is_dir() {
-            bail!("{}: Not a directory", path);
-        }
-
-        std::env::set_current_dir(&abs_path).map_err(|err| anyhow!("{}: {}", path, err))
-    }
-
-    fn echo(&mut self, argv: &[String]) -> Result<()> {
-        writeln!(self.writer, "{}", argv.join(" "))?;
-        Ok(())
-    }
-
-    fn exit() -> Result<()> {
-        std::process::exit(0);
-    }
-
-    fn pwd(&mut self) -> Result<()> {
-        match std::env::current_dir() {
-            Ok(pwd) => {
-                writeln!(self.writer, "{}", pwd.display())?;
-            }
-            Err(err) => {
-                writeln!(self.writer, "{}", err)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn typebuiltin(&mut self, argv: &[String]) -> Result<()> {
-        for arg in argv {
-            if self.builtins.contains(&arg.as_str()) {
-                writeln!(self.writer, "{} is a shell builtin", arg)?;
-            } else if let Some(path) = self.externals.get(arg) {
-                writeln!(self.writer, "{} is {}", arg, path.display())?;
-            } else {
-                writeln!(self.writer, "{} not found", arg)?;
-            }
-        }
-        Ok(())
-    }
+    output
 }
 
 #[cfg(test)]
