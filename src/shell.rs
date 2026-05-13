@@ -4,10 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{
-    builtins,
-    parser::{CommandParser, ParserError},
-};
+use crate::{builtins, errors::ParserError, parser::CommandParser};
 
 pub struct Shell<R: BufRead, W: Write> {
     pub(crate) reader: R,
@@ -58,23 +55,7 @@ impl<R: BufRead, W: Write> Shell<R, W> {
         // (or if the error can't be resolved by keeping parsing further lines)
         self.buf.clear();
         self.prompt = "$";
-
-        if let Err(err) = self.run_command(cmd) {
-            writeln!(self.writer, "{}", err)?;
-        }
-
-        // if self.builtins.contains(&cmd_name.as_str()) {
-        //     // TODO: move error handling in the run_builtin function
-        //
-        //     if let Err(err) = self.run_builtin(cmd_name, &cmd.argv[1..]) {
-        //         writeln!(self.writer, "{}: {}", cmd_name, err)?;
-        //     }
-        // } else if self.externals.contains_key(cmd_name) {
-        //     self.run_external(cmd_name, &cmd.argv[1..])?;
-        // } else {
-        //     writeln!(self.writer, "{}: command not found", cmd_name)?;
-        // }
-        //
+        self.run_command(cmd);
         Ok(())
     }
 

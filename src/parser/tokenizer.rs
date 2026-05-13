@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::parser::ParserError;
+use crate::errors::ParserError;
 
 #[derive(Debug)]
 pub enum Token {

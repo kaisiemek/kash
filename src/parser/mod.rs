@@ -2,16 +2,10 @@ mod tokenizer;
 
 use std::{path::PathBuf, vec::IntoIter};
 
-use crate::parser::tokenizer::{Token, Tokenizer};
-
-#[derive(Debug)]
-pub enum ParserError {
-    UnterminatedSingleQuoteString,
-    UnterminatedDoubleQuoteString,
-    NeedNextLine,
-    UnexpectedEnd,
-    UnexpectedToken,
-}
+use crate::{
+    errors::ParserError,
+    parser::tokenizer::{Token, Tokenizer},
+};
 
 pub struct CommandParser {
     tokenizer: Tokenizer,
