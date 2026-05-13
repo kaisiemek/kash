@@ -1,10 +1,15 @@
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufRead, Read, Write},
     process::{Command, Stdio},
 };
 
-use crate::{builtins, errors::ShellError, parser::ShellCommand, shell::Shell};
+use crate::{
+    builtins,
+    errors::ShellError,
+    parser::{PipeRedirect, RedirectMode, ShellCommand},
+    shell::Shell,
+};
 
 impl<R: BufRead, W: Write> Shell<R, W> {
     pub fn run_command(&mut self, cmd: ShellCommand) {
@@ -39,7 +44,7 @@ impl<R: BufRead, W: Write> Shell<R, W> {
             _ => "".to_string(),
         };
 
-        match Self::make_redirect_file(cmd)? {
+        match Self::make_redirect_file(&cmd.stdout_redirect)? {
             Some(mut file) => write!(file, "{}", output)?,
             None => write!(self.writer, "{}", output)?,
         }
@@ -68,32 +73,46 @@ impl<R: BufRead, W: Write> Shell<R, W> {
             return Err(ShellError::PipeError);
         };
 
-        let mut stderr_output = String::new();
-        stderr.read_to_string(&mut stderr_output)?;
-        write!(self.writer, "{}", stderr_output)?;
+        self.write_pipe_output(&mut stdout, &cmd.stdout_redirect)?;
+        self.write_pipe_output(&mut stderr, &cmd.stderr_redirect)?;
+        Ok(())
+    }
 
-        let mut output = String::new();
-        stdout.read_to_string(&mut output)?;
-        match Self::make_redirect_file(cmd)? {
-            Some(mut file) => write!(file, "{}", output)?,
-            None => write!(self.writer, "{}", output)?,
+    fn write_pipe_output<R2: Read>(
+        &mut self,
+        pipe_output: &mut R2,
+        redirect: &Option<PipeRedirect>,
+    ) -> Result<(), ShellError> {
+        let mut buf = String::new();
+        pipe_output.read_to_string(&mut buf)?;
+        match Self::make_redirect_file(redirect)? {
+            Some(mut file) => write!(file, "{}", buf)?,
+            None => write!(self.writer, "{}", buf)?,
         }
         Ok(())
     }
 
-    fn make_redirect_file(cmd: &ShellCommand) -> Result<Option<File>, ShellError> {
-        match &cmd.stdout_redirect {
-            Some(path) => match File::create(path) {
-                Ok(file) => Ok(Some(file)),
-                Err(err) => Err(match err.kind() {
-                    std::io::ErrorKind::NotFound => ShellError::NoSuchFileOrDir(path.to_owned()),
-                    std::io::ErrorKind::PermissionDenied => {
-                        ShellError::PermissionDenied(path.to_owned())
-                    }
-                    _ => err.into(),
-                }),
-            },
-            None => Ok(None),
+    fn make_redirect_file(redirect: &Option<PipeRedirect>) -> Result<Option<File>, ShellError> {
+        let Some(redirect) = redirect else {
+            return Ok(None);
+        };
+        let mut open_opts = OpenOptions::new();
+        open_opts.create(true).write(true);
+        match redirect.mode {
+            RedirectMode::Append => open_opts.append(true),
+            RedirectMode::Overwrite => open_opts.truncate(true),
+        };
+        match open_opts.open(&redirect.path) {
+            Ok(file) => Ok(Some(file)),
+            Err(err) => Err(match err.kind() {
+                std::io::ErrorKind::NotFound => {
+                    ShellError::NoSuchFileOrDir(redirect.path.to_owned())
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    ShellError::PermissionDenied(redirect.path.to_owned())
+                }
+                _ => err.into(),
+            }),
         }
     }
 }

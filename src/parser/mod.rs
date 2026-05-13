@@ -4,9 +4,8 @@ use std::{path::PathBuf, vec::IntoIter};
 
 use crate::{
     errors::ParserError,
-    parser::tokenizer::{Token, Tokenizer},
+    parser::tokenizer::{RedirectType, Token, Tokenizer},
 };
-
 pub struct CommandParser {
     tokenizer: Tokenizer,
     tokens: IntoIter<Token>,
@@ -15,7 +14,20 @@ pub struct CommandParser {
 #[derive(Debug, Default)]
 pub struct ShellCommand {
     pub argv: Vec<String>,
-    pub stdout_redirect: Option<PathBuf>,
+    pub stdout_redirect: Option<PipeRedirect>,
+    pub stderr_redirect: Option<PipeRedirect>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct PipeRedirect {
+    pub path: PathBuf,
+    pub mode: RedirectMode,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RedirectMode {
+    Append,
+    Overwrite,
 }
 
 impl CommandParser {
@@ -33,13 +45,30 @@ impl CommandParser {
         while let Some(token) = self.tokens.next() {
             match token {
                 Token::Word(word) => command.argv.push(word),
-                Token::StdoutRedirect => {
-                    command.stdout_redirect = Some(PathBuf::from(self.expect_word()?))
-                }
+                Token::RedirectOperator(red_type) => self.parse_redirect(&mut command, red_type)?,
             }
         }
 
         Ok(command)
+    }
+
+    fn parse_redirect(
+        &mut self,
+        command: &mut ShellCommand,
+        red_type: RedirectType,
+    ) -> Result<(), ParserError> {
+        let redirect = Some(PipeRedirect {
+            path: PathBuf::from(self.expect_word()?),
+            mode: match red_type {
+                RedirectType::Stdout | RedirectType::Stderr => RedirectMode::Overwrite,
+                RedirectType::StdoutAppend | RedirectType::StderrAppend => RedirectMode::Append,
+            },
+        });
+        match red_type {
+            RedirectType::Stdout | RedirectType::StdoutAppend => command.stdout_redirect = redirect,
+            RedirectType::Stderr | RedirectType::StderrAppend => command.stderr_redirect = redirect,
+        }
+        Ok(())
     }
 
     fn expect_word(&mut self) -> Result<String, ParserError> {
@@ -53,9 +82,7 @@ impl CommandParser {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
-
-    use crate::parser::CommandParser;
+    use crate::parser::{CommandParser, PipeRedirect, RedirectMode};
 
     fn run_tests(inputs: Vec<&str>, expected_outputs: Vec<Vec<&str>>) {
         let expected_outputs: Vec<Vec<String>> = expected_outputs
@@ -143,16 +170,43 @@ mod test {
         run_tests(inputs, expected_outputs);
     }
 
+    fn make_redirect(path: &str, mode: &str) -> Option<PipeRedirect> {
+        let mode = if mode == "a" {
+            RedirectMode::Append
+        } else {
+            RedirectMode::Overwrite
+        };
+
+        Some(PipeRedirect {
+            path: path.into(),
+            mode,
+        })
+    }
+
     #[test]
     fn test_redirects() {
         let inputs = vec![
-            "echo 'abc' > testfile",
-            "echo 'abc' > testfile1 > testfile2",
-            "echo 'abc' > subdir/testfile",
+            "echo 'abc'",
+            "echo 'abc' > out",
+            "echo 'abc' > out 1> out2",
+            "echo 'abc' > subdir/out",
+            "echo 'abc' 1> out 2> err",
+            "echo 'abc' 1>> out 2>> err 2> err2",
+            "echo 'abc' 2>> err >> out",
+            "echo>>out 'abc'2>>err",
+            "echo>'out file.txt' abc",
         ];
-        let expected_outputs = vec!["testfile", "testfile2", "subdir/testfile"];
-        let expected_outputs: Vec<PathBuf> =
-            expected_outputs.iter().map(|s| PathBuf::from(s)).collect();
+        let expected_outputs = vec![
+            (None, None),
+            (make_redirect("out", "o"), None),
+            (make_redirect("out2", "o"), None),
+            (make_redirect("subdir/out", "o"), None),
+            (make_redirect("out", "o"), make_redirect("err", "o")),
+            (make_redirect("out", "a"), make_redirect("err2", "o")),
+            (make_redirect("out", "a"), make_redirect("err", "a")),
+            (make_redirect("out", "a"), make_redirect("err", "a")),
+            (make_redirect("out file.txt", "o"), None),
+        ];
 
         for (input, expected_output) in inputs.iter().zip(expected_outputs) {
             let mut parser = CommandParser::new();
@@ -160,9 +214,13 @@ mod test {
             input_line.push('\n');
             let cmd = parser.parse(&input_line).unwrap();
             assert_eq!(
-                cmd.stdout_redirect.unwrap(),
-                expected_output,
-                "input: {}",
+                cmd.stdout_redirect, expected_output.0,
+                "stdout, input: {}",
+                input
+            );
+            assert_eq!(
+                cmd.stderr_redirect, expected_output.1,
+                "stderr, input: {}",
                 input
             );
         }

@@ -5,7 +5,15 @@ use crate::errors::ParserError;
 #[derive(Debug)]
 pub enum Token {
     Word(String),
-    StdoutRedirect,
+    RedirectOperator(RedirectType),
+}
+
+#[derive(Debug)]
+pub enum RedirectType {
+    Stdout,
+    Stderr,
+    StdoutAppend,
+    StderrAppend,
 }
 
 pub struct Tokenizer {
@@ -40,18 +48,15 @@ impl Tokenizer {
             };
 
             match c {
-                '>' => {
-                    self.input.pop_front();
-                    self.tokens.push(Token::StdoutRedirect);
-                }
-                '1' => {
-                    self.input.pop_front();
-                    if self.input.front().is_some_and(|c| *c == '>') {
-                        self.tokens.push(Token::StdoutRedirect);
-                        self.input.pop_front();
-                    } else {
-                        self.buf.push(c);
-                        self.tokenize_word()?;
+                '>' | '1' | '2' => {
+                    match self.handle_redirect() {
+                        Some(red_type) => self.tokens.push(Token::RedirectOperator(red_type)),
+                        None => {
+                            // avoid calling the expensive handle_redirect function again in the
+                            // tokenize_word function
+                            self.input.pop_front();
+                            self.buf.push(c);
+                        }
                     }
                 }
                 _ => {
@@ -72,7 +77,7 @@ impl Tokenizer {
             };
             match c {
                 ' ' | '\n' | '\t' => break,
-                '>' | '1' => {
+                '>' | '1' | '2' => {
                     if self.handle_redirect_mid_word(c) {
                         return Ok(());
                     }
@@ -152,24 +157,55 @@ impl Tokenizer {
     }
 
     fn handle_redirect_mid_word(&mut self, c: char) -> bool {
-        match c {
-            '>' => {}
-            '1' if self.input.front().is_some_and(|c| *c == '>') => {
-                self.input.pop_front();
+        self.input.push_front(c);
+        match self.handle_redirect() {
+            Some(red_type) => {
+                self.add_word_token();
+                self.tokens.push(Token::RedirectOperator(red_type));
+                true
             }
-            c => {
+            None => {
+                self.input.pop_front();
                 self.buf.push(c);
-                return false;
+                false
             }
         }
-        self.add_word_token();
-        self.tokens.push(Token::StdoutRedirect);
-        true
+    }
+
+    fn handle_redirect(&mut self) -> Option<RedirectType> {
+        if self.match_pattern("1>>") || self.match_pattern(">>") {
+            Some(RedirectType::StdoutAppend)
+        } else if self.match_pattern("1>") || self.match_pattern(">") {
+            Some(RedirectType::Stdout)
+        } else if self.match_pattern("2>>") {
+            Some(RedirectType::StderrAppend)
+        } else if self.match_pattern("2>") {
+            Some(RedirectType::Stderr)
+        } else {
+            None
+        }
     }
 
     fn add_word_token(&mut self) {
         if !self.buf.is_empty() {
             self.tokens.push(Token::Word(std::mem::take(&mut self.buf)));
         }
+    }
+
+    fn match_pattern(&mut self, pattern: &str) -> bool {
+        if self.input.len() < pattern.len() {
+            return false;
+        }
+
+        let first_n_chars = &self.input.make_contiguous()[0..pattern.len()];
+        let matches = first_n_chars
+            .iter()
+            .zip(pattern.chars())
+            .all(|(c1, c2)| *c1 == c2);
+
+        if matches {
+            self.input.drain(0..pattern.len());
+        }
+        matches
     }
 }
